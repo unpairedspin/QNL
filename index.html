@@ -580,32 +580,27 @@
             pointLight.position.set(5, 8, 5);
             blochScene.add(pointLight);
 
-            // Sphere (Glass/Translucent)
-            const sphereGeo = new THREE.SphereGeometry(blochRadius, 32, 32);
+            // A transparent shell must not write depth: otherwise it hides the
+            // transparent rings and axes inside it, even at very low opacity.
+            const sphereGeo = new THREE.SphereGeometry(blochRadius, 64, 48);
             const sphereMat = new THREE.MeshPhongMaterial({
-                color: 0xffffff,
+                color: 0xd6deea,
                 transparent: true,
-                opacity: 0.025,
-                shininess: 90,
-                wireframe: false
+                opacity: 0.10,
+                depthWrite: false,
+                side: THREE.DoubleSide,
+                shininess: 0
             });
             const sphereMesh = new THREE.Mesh(sphereGeo, sphereMat);
+            sphereMesh.name = 'bloch-transparent-shell';
+            sphereMesh.renderOrder = -1;
             blochScene.add(sphereMesh);
 
-            // Wireframe Overlay
-            const wireframeGeo = new THREE.SphereGeometry(blochRadius * 1.001, 16, 16);
-            const wireframeMat = new THREE.MeshBasicMaterial({
-                color: 0x7c8b9d,
-                wireframe: true,
-                transparent: true,
-                opacity: 0.25
-            });
-            blochScene.add(new THREE.Mesh(wireframeGeo, wireframeMat));
-
-            // Equator / Meridian Rings
-            createRing(blochRadius, 0x808c9b, 'xy'); // Equator (X-Y)
-            createRing(blochRadius, 0xb3bdca, 'xz'); // Meridian (X-Z)
-            createRing(blochRadius, 0x929eac, 'yz'); // Meridian (Y-Z)
+            // The three great circles are the intersections with Z=0, Y=0,
+            // and X=0 in Bloch coordinates. No triangulated surface grid.
+            createRing(blochRadius, 0x788697, 'xy'); // Z=0
+            createRing(blochRadius, 0x788697, 'xz'); // Y=0
+            createRing(blochRadius, 0x788697, 'yz'); // X=0
 
             // Bloch Axes
             // Physics standard mapping on Bloch sphere:
@@ -613,9 +608,17 @@
             // X (+X in Three.js): |D> (+X right), |A> (-X left)
             // Y (+Z in Three.js): |L> (+Y front), |R> (-Y back)
 
-            createAxis(new THREE.Vector3(0, blochRadius * 1.3, 0), new THREE.Vector3(0, -blochRadius * 1.3, 0), 0x38bdf8); // Z-axis
-            createAxis(new THREE.Vector3(blochRadius * 1.3, 0, 0), new THREE.Vector3(-blochRadius * 1.3, 0, 0), 0x10b981); // X-axis
-            createAxis(new THREE.Vector3(0, 0, blochRadius * 1.3), new THREE.Vector3(0, 0, -blochRadius * 1.3), 0xf59e0b); // Y-axis
+            const axisExtent = blochRadius * 1.18;
+            createAxis(new THREE.Vector3(0, axisExtent, 0), new THREE.Vector3(0, -axisExtent, 0), 0x2563b5); // Z-axis
+            createAxis(new THREE.Vector3(axisExtent, 0, 0), new THREE.Vector3(-axisExtent, 0, 0), 0x15835b); // X-axis
+            createAxis(new THREE.Vector3(0, 0, axisExtent), new THREE.Vector3(0, 0, -axisExtent), 0xb87612); // Y-axis
+
+            // Mark the common origin of the three perpendicular axes.
+            const originMarker = new THREE.Mesh(
+                new THREE.SphereGeometry(0.045, 16, 12),
+                new THREE.MeshBasicMaterial({ color: 0x475569 })
+            );
+            blochScene.add(originMarker);
 
             // Add Text Labels using Canvas Sprites
             addTextSprite("|H⟩ (+Z)", 0, blochRadius * 1.45, 0, "#1557a0");
@@ -643,13 +646,23 @@
             blochScene.add(sphereTipMesh);
         }
 
-        // Helper to draw clean rings
+        // Dashed great circles remain visible through the transparent shell.
         function createRing(radius, color, plane) {
             const curve = new THREE.EllipseCurve(0, 0, radius, radius, 0, 2 * Math.PI, false, 0);
-            const points = curve.getPoints(64);
+            const points = curve.getPoints(192);
             const geometry = new THREE.BufferGeometry().setFromPoints(points);
-            const material = new THREE.LineBasicMaterial({ color: color, transparent: true, opacity: 0.5 });
+            const material = new THREE.LineDashedMaterial({
+                color: color,
+                transparent: true,
+                opacity: 0.65,
+                dashSize: 0.10,
+                gapSize: 0.075,
+                depthWrite: false
+            });
             const ring = new THREE.LineLoop(geometry, material);
+            ring.name = 'bloch-great-circle-' + plane;
+            ring.computeLineDistances();
+            ring.renderOrder = 1;
 
             if (plane === 'xy') {
                 ring.rotation.x = Math.PI / 2;
@@ -659,11 +672,30 @@
             blochScene.add(ring);
         }
 
-        // Helper to create axis line
+        // Solid shafts and arrowheads show both halves of each axis clearly.
         function createAxis(p1, p2, color) {
-            const geo = new THREE.BufferGeometry().setFromPoints([p1, p2]);
-            const mat = new THREE.LineBasicMaterial({ color: color, opacity: 0.6, transparent: true });
-            blochScene.add(new THREE.Line(geo, mat));
+            const axis = new THREE.Group();
+            axis.name = 'bloch-axis';
+            const direction = new THREE.Vector3().subVectors(p1, p2).normalize();
+            const up = new THREE.Vector3(0, 1, 0);
+            const material = new THREE.MeshBasicMaterial({ color: color });
+            const headLength = 0.22;
+            const shaft = new THREE.Mesh(
+                new THREE.CylinderGeometry(0.018, 0.018, p1.distanceTo(p2) - 2 * headLength, 12),
+                material
+            );
+            shaft.position.copy(p1).add(p2).multiplyScalar(0.5);
+            shaft.quaternion.setFromUnitVectors(up, direction);
+            axis.add(shaft);
+
+            [p1, p2].forEach((endpoint, index) => {
+                const outward = direction.clone().multiplyScalar(index === 0 ? 1 : -1);
+                const head = new THREE.Mesh(new THREE.ConeGeometry(0.075, headLength, 16), material);
+                head.position.copy(endpoint).addScaledVector(outward, -headLength / 2);
+                head.quaternion.setFromUnitVectors(up, outward);
+                axis.add(head);
+            });
+            blochScene.add(axis);
         }
 
         // Canvas Text Sprite Generator
@@ -679,8 +711,14 @@
             ctx.fillText(text, 128, 64);
 
             const texture = new THREE.CanvasTexture(canvas);
-            const spriteMaterial = new THREE.SpriteMaterial({ map: texture, transparent: true });
+            const spriteMaterial = new THREE.SpriteMaterial({
+                map: texture,
+                transparent: true,
+                depthTest: false,
+                depthWrite: false
+            });
             const sprite = new THREE.Sprite(spriteMaterial);
+            sprite.renderOrder = 2;
             sprite.position.set(x, y, z);
             sprite.scale.set(1.6, 0.8, 1);
             blochScene.add(sprite);
@@ -965,3 +1003,4 @@
     </script>
 </body>
 </html>
+
