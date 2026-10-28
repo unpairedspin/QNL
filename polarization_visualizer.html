@@ -1,0 +1,967 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Light Polarization & Bloch (Poincaré) Sphere Visualizer</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Three.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- OrbitControls -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;800&family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0b0f17;
+            color: #e2e8f0;
+            overflow-x: hidden;
+        }
+        .code-font {
+            font-family: 'JetBrains Mono', monospace;
+        }
+        /* Custom scrollbars */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0f172a;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #334155;
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #475569;
+        }
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.75);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        .glow-cyan {
+            box-shadow: 0 0 20px rgba(6, 182, 212, 0.25);
+        }
+        .glow-amber {
+            box-shadow: 0 0 20px rgba(245, 158, 11, 0.25);
+        }
+        /* Slider styling */
+        input[type=range] {
+            accent-color: #06b6d4;
+        }
+
+    /* Academic white theme / original Three.js interaction preserved */
+    :root { --ink:#1b2533; --muted:#667489; --line:#d8dee7; --subtle:#f5f7fa; --accent:#205a90; }
+    html { scroll-behavior:smooth; }
+    body { background:#fff !important; color:var(--ink) !important; font-family:Arial, 'Apple SD Gothic Neo', sans-serif !important; min-height:100vh; }
+    .code-font { font-family:Consolas, 'Courier New', monospace; }
+    .glass-panel { background:#fff !important; color:var(--ink) !important; backdrop-filter:none !important; box-shadow:none !important; border-color:var(--line) !important; }
+    .glow-cyan, .glow-amber { box-shadow:none !important; }
+    header { position:relative !important; z-index:2; min-height:72px; padding:9px 18px !important; border-bottom:1px solid var(--line) !important; background:#fff !important; box-shadow:none !important; }
+    header > div:first-child { min-width:265px; }
+    header h1 { color:#151b24 !important; background:none !important; -webkit-text-fill-color:initial !important; font-size:17px !important; line-height:1.25 !important; }
+    header p { color:var(--muted) !important; font-size:11px !important; }
+    header > div:last-child { flex-wrap:nowrap; gap:5px !important; }
+    .preset-btn { background:#fff !important; border:1px solid #cfd7e2 !important; border-radius:5px !important; box-shadow:none !important; padding:8px 10px !important; white-space:nowrap; color:#334154 !important; font-size:12px !important; }
+    .preset-btn:hover { background:#f0f4f8 !important; }
+    .preset-btn.glow-cyan { background:#e6f0fa !important; color:#164c7a !important; border-color:#4279af !important; font-weight:700; }
+    #workspace { padding:0 !important; width:100%; }
+    /* A 4:3 presentation canvas. Controls live *below* this complete first viewport. */
+    #visual-stage {
+      width:min(100%, calc((100dvh - 76px) * 4 / 3));
+      max-width:1400px; aspect-ratio:4 / 3;
+      margin:0 auto; padding:10px;
+      display:grid; grid-template-columns:minmax(0,7fr) minmax(0,5fr); gap:10px;
+      background:#fff; box-sizing:border-box;
+    }
+    #visual-stage > div { min-width:0; min-height:0 !important; height:100%; position:relative; display:block !important; border:1px solid var(--line) !important; border-radius:6px !important; background:#fff !important; overflow:hidden; box-shadow:none !important; }
+    #canvas-wave-container, #canvas-bloch-container { position:absolute !important; inset:0; width:100% !important; height:100% !important; min-height:0 !important; cursor:grab; touch-action:none; }
+    #canvas-wave-container:active, #canvas-bloch-container:active { cursor:grabbing; }
+    #canvas-wave-container canvas, #canvas-bloch-container canvas { display:block; }
+    #visual-stage .absolute { z-index:1; }
+    #visual-stage .absolute.top-3.left-4 { left:14px !important; top:13px !important; }
+    #visual-stage .absolute.top-3.left-4 .animate-pulse { display:none; }
+    #visual-stage .absolute.top-3.left-4 span { color:#253244 !important; font-size:12px !important; }
+    #visual-stage .absolute.top-3.left-4 span:last-child:not(:first-child) { background:#f3f5f8 !important; border:1px solid var(--line) !important; color:#68778b !important; }
+    #visual-stage .absolute.top-3.right-4 { background:rgba(255,255,255,.92) !important; color:#8995a5 !important; border:none !important; }
+    #visual-stage .absolute.bottom-3.left-4 { background:rgba(255,255,255,.94) !important; color:#374558 !important; border:1px solid #e3e7ed !important; border-radius:4px !important; font-size:11px !important; }
+    #visual-stage .absolute.bottom-3.left-4 span, #visual-stage .absolute.bottom-3.left-4 div { color:#4a576b !important; }
+    #visual-stage .absolute.bottom-3.left-4 span.bg-rose-500 { background:#e11d48 !important; }
+    #visual-stage .absolute.bottom-3.left-4 span.bg-emerald-400 { background:#0c9b72 !important; }
+    #visual-stage .absolute.bottom-3.left-4 span.bg-cyan-400 { background:#0284c7 !important; }
+    #controls-section { width:min(100%, 1140px); margin:12px auto 20px; padding:20px 14px 30px; background:#fff; box-sizing:border-box; border-top:1px solid var(--line); gap:16px !important; }
+    #controls-section > div { min-height:320px; background:#fff !important; border:1px solid var(--line) !important; border-radius:6px !important; box-shadow:none !important; }
+    #controls-section .border-slate-800, #controls-section .border-slate-700 { border-color:#e2e6ec !important; }
+    #controls-section .bg-slate-900\/90, #controls-section .bg-slate-800\/60 { background:var(--subtle) !important; border-color:var(--line) !important; }
+    #controls-section .text-slate-400, #controls-section .text-slate-300 { color:var(--muted) !important; }
+    #controls-section .text-cyan-400, #controls-section .text-cyan-300 { color:#216b9d !important; }
+    #controls-section .text-emerald-400, #controls-section .text-emerald-300 { color:#16815d !important; }
+    #controls-section .text-amber-400, #controls-section .text-amber-300 { color:#9a5a00 !important; }
+    #controls-section .text-white { color:#1d2b3a !important; }
+    #controls-section h3 { font-size:13px !important; }
+    #controls-section .rounded-xl { border-radius:5px !important; }
+    #controls-section input[type=range] { accent-color:#2e6d9f; background:#e1e6ee !important; }
+    footer { background:#fff !important; border-top:1px solid var(--line) !important; color:#8894a4 !important; }
+    ::-webkit-scrollbar-track { background:#f3f5f8; }
+    ::-webkit-scrollbar-thumb { background:#c0cad6; border-radius:3px; }
+    @media(max-width:780px) {
+      header { flex-direction:column; align-items:stretch !important; gap:10px; }
+      header > div:last-child { overflow-x:auto; padding-bottom:3px; }
+      #visual-stage { width:100%; aspect-ratio:4 / 3; min-height:0; grid-template-columns:minmax(0,7fr) minmax(0,5fr); grid-template-rows:minmax(0,1fr); }
+      #controls-section { grid-template-columns:1fr; }
+    }
+
+    
+    /* Responsive layout — no fixed 4:3 canvas; viewers fill the available window. */
+    #workspace { width:100%; display:block; }
+    #visual-stage {
+      width:100% !important;
+      max-width:none !important;
+      aspect-ratio:auto !important;
+      height:clamp(440px, calc(100dvh - 88px), 1100px);
+      min-height:0 !important;
+      margin:0 !important;
+      padding:12px 14px 0 !important;
+      grid-template-columns:minmax(0, 7fr) minmax(0, 5fr) !important;
+      grid-template-rows:minmax(0, 1fr) !important;
+      gap:12px !important;
+    }
+    #preset-strip {
+      width:100%; display:flex; align-items:center; gap:10px;
+      margin:0 auto; padding:12px 18px 14px;
+      box-sizing:border-box; flex-wrap:wrap;
+      border-bottom:1px solid #e1e5ea;
+    }
+    #preset-strip > div { display:flex; flex-wrap:wrap; gap:8px; min-width:0; }
+    .preset-caption { color:#526174; font-size:13px; font-weight:700; white-space:nowrap; }
+    #preset-strip .preset-btn { font-size:13px !important; padding:9px 14px !important; }
+    #controls-section { margin-top:18px !important; }
+    @media (max-width:720px) {
+      #visual-stage {
+        height:auto !important;
+        grid-template-columns:minmax(0,1fr) !important;
+        grid-template-rows:420px 420px !important;
+        padding:10px 10px 0 !important;
+        gap:10px !important;
+      }
+      #visual-stage > div { height:100% !important; }
+      #preset-strip { padding:12px 10px 14px; }
+      #preset-strip > div { gap:6px; }
+      #preset-strip .preset-btn { font-size:12px !important; padding:8px 9px !important; }
+    }
+    @media (max-width:420px) {
+      #visual-stage { grid-template-rows:330px 330px !important; }
+      #visual-stage .absolute.top-3.right-4 { display:none; }
+    }
+
+    </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+
+
+    <!-- Main Workspace Grid -->
+    <main id="workspace" class="flex-1">
+        <section id="visual-stage">
+
+        <!-- 3D Viewport Left: Wave Propagation (7 Cols) -->
+        <div class="flex flex-col glass-panel rounded-2xl overflow-hidden border border-slate-800 relative group min-h-[420px]">
+            <!-- Viewport Overlay Header -->
+            <div class="absolute top-3 left-4 z-10 pointer-events-none flex items-center space-x-2">
+                <span class="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-pulse"></span>
+                <span class="text-xs font-bold text-slate-200 uppercase tracking-wider">3D 파동 전파 (Wave Propagation)</span>
+                <span class="text-[10px] bg-slate-800/80 text-cyan-300 px-2 py-0.5 rounded border border-cyan-500/20 code-font">E(z, t)</span>
+            </div>
+            <!-- Canvas Container -->
+            <div id="canvas-wave-container" class="w-full h-full min-h-[400px] flex-1 cursor-grab active:cursor-grabbing"></div>
+            <!-- Legend overlay -->
+            <div class="absolute bottom-3 left-4 z-10 pointer-events-none flex gap-3 text-xs bg-slate-900/80 p-2 rounded-lg border border-slate-800">
+                <div class="flex items-center gap-1.5">
+                    <span class="w-3 h-0.5 bg-rose-500 inline-block"></span>
+                    <span class="text-slate-400">E<sub>x</sub> (수평)</span>
+                </div>
+                <div class="flex items-center gap-1.5">
+                    <span class="w-3 h-0.5 bg-emerald-400 inline-block"></span>
+                    <span class="text-slate-400">E<sub>y</sub> (수직)</span>
+                </div>
+                <div class="flex items-center gap-1.5">
+                    <span class="w-3 h-0.5 bg-cyan-400 inline-block"></span>
+                    <span class="text-slate-300 font-semibold">E 합성 벡터</span>
+                </div>
+            </div>
+            <!-- Interactive hint -->
+            <div class="absolute top-3 right-4 z-10 text-[11px] text-slate-400 pointer-events-none bg-slate-900/60 px-2.5 py-1 rounded">
+                드래그하여 회전 / 스크롤 확대
+            </div>
+        </div>
+
+        <!-- 3D Viewport Right: Bloch Sphere (5 Cols) -->
+        <div class="flex flex-col glass-panel rounded-2xl overflow-hidden border border-slate-800 relative group min-h-[420px]">
+            <!-- Viewport Overlay Header -->
+            <div class="absolute top-3 left-4 z-10 pointer-events-none flex items-center space-x-2">
+                <span class="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse"></span>
+                <span class="text-xs font-bold text-slate-200 uppercase tracking-wider">블로흐 구 / 푸앵카레 구 (Bloch Sphere)</span>
+            </div>
+            <!-- Canvas Container -->
+            <div id="canvas-bloch-container" class="w-full h-full min-h-[400px] flex-1 cursor-grab active:cursor-grabbing"></div>
+            <!-- Axis Legend -->
+            <div class="absolute bottom-3 left-4 z-10 pointer-events-none text-[11px] text-slate-400 bg-slate-900/80 p-2 rounded-lg border border-slate-800 grid grid-cols-3 gap-2">
+                <div><span class="text-cyan-400 font-bold">Z축:</span> |H⟩ / |V⟩</div>
+                <div><span class="text-emerald-400 font-bold">X축:</span> |D⟩ / |A⟩</div>
+                <div><span class="text-amber-400 font-bold">Y축:</span> |L⟩ / |R⟩</div>
+            </div>
+            <!-- Interactive hint -->
+            <div class="absolute top-3 right-4 z-10 text-[11px] text-slate-400 pointer-events-none bg-slate-900/60 px-2.5 py-1 rounded">
+                3D 시점 조절 가능
+            </div>
+        </div>
+
+        <!-- Control Sliders & Physics Parameters (Full Width / Grid) -->
+        </section>
+        <nav id="preset-strip" aria-label="편광 상태 프리셋">
+          <span class="preset-caption">기저 프리셋</span>
+<div class="flex items-center gap-1.5 overflow-x-auto py-1">
+            <span class="text-xs text-slate-400 font-semibold uppercase tracking-wider mr-1 hidden lg:inline">기저 프리셋:</span>
+            <button onclick="setPreset('H')" id="btn-H" class="preset-btn px-3 py-1.5 text-xs font-semibold rounded-md transition-all glass-panel border border-cyan-500/30 text-cyan-300 hover:bg-cyan-500/20 flex items-center gap-1.5">
+                <span class="font-bold">|H⟩</span> 수평편광
+            </button>
+            <button onclick="setPreset('V')" id="btn-V" class="preset-btn px-3 py-1.5 text-xs font-semibold rounded-md transition-all glass-panel border border-slate-700 text-slate-300 hover:bg-slate-800 flex items-center gap-1.5">
+                <span class="font-bold">|V⟩</span> 수직편광
+            </button>
+            <button onclick="setPreset('D')" id="btn-D" class="preset-btn px-3 py-1.5 text-xs font-semibold rounded-md transition-all glass-panel border border-slate-700 text-slate-300 hover:bg-slate-800 flex items-center gap-1.5">
+                <span class="font-bold">|D⟩</span> 대각 (+45°)
+            </button>
+            <button onclick="setPreset('A')" id="btn-A" class="preset-btn px-3 py-1.5 text-xs font-semibold rounded-md transition-all glass-panel border border-slate-700 text-slate-300 hover:bg-slate-800 flex items-center gap-1.5">
+                <span class="font-bold">|A⟩</span> 역대각 (-45°)
+            </button>
+            <button onclick="setPreset('R')" id="btn-R" class="preset-btn px-3 py-1.5 text-xs font-semibold rounded-md transition-all glass-panel border border-slate-700 text-slate-300 hover:bg-slate-800 flex items-center gap-1.5">
+                <span class="font-bold">|R⟩</span> 우원편광
+            </button>
+            <button onclick="setPreset('L')" id="btn-L" class="preset-btn px-3 py-1.5 text-xs font-semibold rounded-md transition-all glass-panel border border-slate-700 text-slate-300 hover:bg-slate-800 flex items-center gap-1.5">
+                <span class="font-bold">|L⟩</span> 좌원편광
+            </button>
+            <button onclick="setPreset('E')" id="btn-E" class="preset-btn px-3 py-1.5 text-xs font-semibold rounded-md transition-all glass-panel border border-slate-700 text-slate-300 hover:bg-slate-800 flex items-center gap-1.5">
+                타원편광
+            </button>
+        </div>
+        </nav>
+        <section id="controls-section" class="grid grid-cols-1 lg:grid-cols-12 gap-4">
+
+            <!-- Controls Panel (6 cols) -->
+            <div class="lg:col-span-6 glass-panel rounded-2xl p-4 border border-slate-800 flex flex-col justify-between">
+                <div class="flex items-center justify-between mb-3 pb-2 border-b border-slate-800">
+                    <h3 class="text-xs font-bold uppercase tracking-wider text-cyan-400 flex items-center gap-2">
+                         파동 매개변수 실시간 조절
+                    </h3>
+                    <button onclick="resetSliders()" class="text-xs text-slate-400 hover:text-white transition">
+                        초기화
+                    </button>
+                </div>
+
+                <div class="space-y-3">
+                    <!-- Ex Amplitude -->
+                    <div>
+                        <div class="flex justify-between text-xs mb-1">
+                            <span class="text-slate-300 font-medium">수평 진폭 (E<sub>0x</sub>)</span>
+                            <span id="val-Ex" class="code-font text-cyan-400 font-semibold">1.00</span>
+                        </div>
+                        <input type="range" id="slider-Ex" min="0" max="1" step="0.01" value="1.00" class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer">
+                    </div>
+
+                    <!-- Ey Amplitude -->
+                    <div>
+                        <div class="flex justify-between text-xs mb-1">
+                            <span class="text-slate-300 font-medium">수직 진폭 (E<sub>0y</sub>)</span>
+                            <span id="val-Ey" class="code-font text-emerald-400 font-semibold">0.00</span>
+                        </div>
+                        <input type="range" id="slider-Ey" min="0" max="1" step="0.01" value="0.00" class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer">
+                    </div>
+
+                    <!-- Phase Difference Delta -->
+                    <div>
+                        <div class="flex justify-between text-xs mb-1">
+                            <span class="text-slate-300 font-medium">위상차 (&Delta;&phi; = &phi;<sub>y</sub> - &phi;<sub>x</sub>)</span>
+                            <span id="val-Delta" class="code-font text-amber-400 font-semibold">0&deg;</span>
+                        </div>
+                        <input type="range" id="slider-Delta" min="-180" max="180" step="1" value="0" class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer">
+                    </div>
+
+                    <!-- Speed & Freq Dual row -->
+                    <div class="grid grid-cols-2 gap-4 pt-1">
+                        <div>
+                            <div class="flex justify-between text-xs mb-1">
+                                <span class="text-slate-400">애니메이션 속도</span>
+                                <span id="val-Speed" class="code-font text-slate-300">1.0x</span>
+                            </div>
+                            <input type="range" id="slider-Speed" min="0" max="3" step="0.1" value="1.0" class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer">
+                        </div>
+                        <div>
+                            <div class="flex justify-between text-xs mb-1">
+                                <span class="text-slate-400">파수 (k / 주파수)</span>
+                                <span id="val-Freq" class="code-font text-slate-300">1.5</span>
+                            </div>
+                            <input type="range" id="slider-Freq" min="0.5" max="3" step="0.1" value="1.5" class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Mathematical Display Panel (6 cols) -->
+            <div class="lg:col-span-6 glass-panel rounded-2xl p-4 border border-slate-800 flex flex-col justify-between">
+                <div class="flex items-center justify-between mb-3 pb-2 border-b border-slate-800">
+                    <h3 class="text-xs font-bold uppercase tracking-wider text-amber-400 flex items-center gap-2">
+                         수리적 표현 (Math Representation)
+                    </h3>
+                    <span class="text-[10px] text-slate-400 bg-slate-800 px-2 py-0.5 rounded code-font">Dirac & Stokes</span>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <!-- Dirac Notation -->
+                    <div class="bg-slate-900/90 rounded-xl p-3 border border-slate-800 flex flex-col justify-center">
+                        <span class="text-[11px] text-slate-400 font-medium mb-1">디랙 상태 벡터 (Dirac Notation)</span>
+                        <div id="math-dirac" class="code-font text-sm text-cyan-300 font-bold truncate">
+                            |&Psi;&rangle; = 1.00|H&rangle;
+                        </div>
+                    </div>
+
+                    <!-- Jones Vector -->
+                    <div class="bg-slate-900/90 rounded-xl p-3 border border-slate-800 flex flex-col justify-center">
+                        <span class="text-[11px] text-slate-400 font-medium mb-1">존스 벡터 (Jones Vector)</span>
+                        <div id="math-jones" class="code-font text-xs text-emerald-300 font-semibold truncate">
+                            J = [1.00, 0.00]<sup>T</sup>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Stokes Parameters & Bloch Vector -->
+                <div class="mt-3 bg-slate-900/90 rounded-xl p-3 border border-slate-800">
+                    <div class="text-[11px] text-slate-400 font-medium mb-2 flex justify-between items-center">
+                        <span>스토크스 파라미터 (Normalized Stokes Parameters)</span>
+                        <span class="text-[10px] text-amber-400">S<sub>1</sub><sup>2</sup> + S<sub>2</sub><sup>2</sup> + S<sub>3</sub><sup>2</sup> = 1</span>
+                    </div>
+
+                    <div class="grid grid-cols-4 gap-2 text-center code-font">
+                        <div class="bg-slate-800/60 p-1.5 rounded-lg border border-slate-700/50">
+                            <span class="block text-[10px] text-slate-400">S<sub>0</sub> (총광량)</span>
+                            <span id="stokes-s0" class="text-xs font-bold text-white">1.00</span>
+                        </div>
+                        <div class="bg-slate-800/60 p-1.5 rounded-lg border border-cyan-500/30">
+                            <span class="block text-[10px] text-cyan-400">S<sub>1</sub> (H vs V)</span>
+                            <span id="stokes-s1" class="text-xs font-bold text-cyan-300">+1.00</span>
+                        </div>
+                        <div class="bg-slate-800/60 p-1.5 rounded-lg border border-emerald-500/30">
+                            <span class="block text-[10px] text-emerald-400">S<sub>2</sub> (D vs A)</span>
+                            <span id="stokes-s2" class="text-xs font-bold text-emerald-300">0.00</span>
+                        </div>
+                        <div class="bg-slate-800/60 p-1.5 rounded-lg border border-amber-500/30">
+                            <span class="block text-[10px] text-amber-400">S<sub>3</sub> (L vs R)</span>
+                            <span id="stokes-s3" class="text-xs font-bold text-amber-300">0.00</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="px-6 py-2.5 text-center text-xs text-slate-400 border-t border-slate-800/60 glass-panel">
+        <p>물리학 전공자를 위한 3D 실시간 광학 파동 및 큐비트 상태 시뮬레이터 | Built with Three.js & Tailwind CSS</p>
+    </footer>
+
+    <!-- JavaScript Logic -->
+    <script>
+        // --- State Variables ---
+        let params = {
+            Ex: 1.0,
+            Ey: 0.0,
+            deltaDeg: 0, // Phase difference in degrees
+            speed: 1.0,
+            freq: 1.5,
+            time: 0
+        };
+
+        // --- Three.js Variables (Wave Scene) ---
+        let waveScene, waveCamera, waveRenderer, waveControls;
+        let waveGroup;
+        let lineEx, lineEy, lineEtotal;
+        let arrowHelpers = [];
+        let endPlaneMesh, traceLine, traceGeometry;
+        const Z_START = -6;
+        const Z_END = 6;
+        const WAVE_POINTS = 200;
+
+        // --- Three.js Variables (Bloch Sphere Scene) ---
+        let blochScene, blochCamera, blochRenderer, blochControls;
+        let stateVectorArrow, sphereTipMesh;
+        let blochRadius = 2.5;
+
+        // --- DOM Elements ---
+        const sliderEx = document.getElementById('slider-Ex');
+        const sliderEy = document.getElementById('slider-Ey');
+        const sliderDelta = document.getElementById('slider-Delta');
+        const sliderSpeed = document.getElementById('slider-Speed');
+        const sliderFreq = document.getElementById('slider-Freq');
+
+        const valEx = document.getElementById('val-Ex');
+        const valEy = document.getElementById('val-Ey');
+        const valDelta = document.getElementById('val-Delta');
+        const valSpeed = document.getElementById('val-Speed');
+        const valFreq = document.getElementById('val-Freq');
+
+        // Math elements
+        const mathDirac = document.getElementById('math-dirac');
+        const mathJones = document.getElementById('math-jones');
+        const stokesS0 = document.getElementById('stokes-s0');
+        const stokesS1 = document.getElementById('stokes-s1');
+        const stokesS2 = document.getElementById('stokes-s2');
+        const stokesS3 = document.getElementById('stokes-s3');
+
+        // --- Initialization ---
+        window.onload = function() {
+            initWaveScene();
+            initBlochScene();
+            setupEventListeners();
+            updateAll();
+            animate();
+        };
+
+        // --- Wave Scene Setup ---
+        function initWaveScene() {
+            const container = document.getElementById('canvas-wave-container');
+            const width = container.clientWidth;
+            const height = container.clientHeight;
+
+            waveScene = new THREE.Scene();
+            waveScene.background = new THREE.Color(0xffffff);
+
+            waveCamera = new THREE.PerspectiveCamera(45, width / height, 0.1, 100);
+            waveCamera.position.set(10, 8, 12);
+
+            waveRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            waveRenderer.setSize(width, height);
+            waveRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            container.appendChild(waveRenderer.domElement);
+
+            waveControls = new THREE.OrbitControls(waveCamera, waveRenderer.domElement);
+            waveControls.enableDamping = true;
+            waveControls.dampingFactor = 0.05;
+
+            // Lights
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+            waveScene.add(ambientLight);
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            dirLight.position.set(5, 10, 7);
+            waveScene.add(dirLight);
+
+            // Coordinates Helper / Axis
+            const axisLength = 7;
+            // Z propagation axis (Blue)
+            const zAxisGeo = new THREE.BufferGeometry().setFromPoints([
+                new THREE.Vector3(0, 0, Z_START - 1),
+                new THREE.Vector3(0, 0, Z_END + 1)
+            ]);
+            const zAxisMat = new THREE.LineBasicMaterial({ color: 0x3b82f6, linewidth: 2 });
+            waveScene.add(new THREE.Line(zAxisGeo, zAxisMat));
+
+            // X axis (Red)
+            const xAxisGeo = new THREE.BufferGeometry().setFromPoints([
+                new THREE.Vector3(-3, 0, Z_START),
+                new THREE.Vector3(3, 0, Z_START)
+            ]);
+            waveScene.add(new THREE.Line(xAxisGeo, new THREE.LineBasicMaterial({ color: 0xef4444, opacity: 0.4, transparent: true })));
+
+            // Y axis (Green)
+            const yAxisGeo = new THREE.BufferGeometry().setFromPoints([
+                new THREE.Vector3(0, -3, Z_START),
+                new THREE.Vector3(0, 3, Z_START)
+            ]);
+            waveScene.add(new THREE.Line(yAxisGeo, new THREE.LineBasicMaterial({ color: 0x10b981, opacity: 0.4, transparent: true })));
+
+            // Grid along propagation path
+            const gridHelper = new THREE.GridHelper(14, 14, 0xd9dee6, 0xf0f2f5);
+            gridHelper.rotation.x = Math.PI / 2;
+            waveScene.add(gridHelper);
+
+            // Group for dynamic wave lines
+            waveGroup = new THREE.Group();
+            waveScene.add(waveGroup);
+
+            // Line Geometries
+            const positions = new Float32Array(WAVE_POINTS * 3);
+
+            // Ex Curve (Red)
+            const geoEx = new THREE.BufferGeometry();
+            geoEx.setAttribute('position', new THREE.BufferAttribute(positions.slice(), 3));
+            lineEx = new THREE.Line(geoEx, new THREE.LineBasicMaterial({ color: 0xf43f5e, linewidth: 2, transparent: true, opacity: 0.75 }));
+
+            // Ey Curve (Green)
+            const geoEy = new THREE.BufferGeometry();
+            geoEy.setAttribute('position', new THREE.BufferAttribute(positions.slice(), 3));
+            lineEy = new THREE.Line(geoEy, new THREE.LineBasicMaterial({ color: 0x10b981, linewidth: 2, transparent: true, opacity: 0.75 }));
+
+            // E Total Curve (Cyan)
+            const geoEtotal = new THREE.BufferGeometry();
+            geoEtotal.setAttribute('position', new THREE.BufferAttribute(positions.slice(), 3));
+            lineEtotal = new THREE.Line(geoEtotal, new THREE.LineBasicMaterial({ color: 0x06b6d4, linewidth: 3 }));
+
+            waveGroup.add(lineEx);
+            waveGroup.add(lineEy);
+            waveGroup.add(lineEtotal);
+
+            // Discrete Field Vectors (Arrows along Z)
+            const numArrows = 24;
+            for (let i = 0; i <= numArrows; i++) {
+                const z = Z_START + (i / numArrows) * (Z_END - Z_START);
+                const arrow = new THREE.ArrowHelper(
+                    new THREE.Vector3(1, 0, 0),
+                    new THREE.Vector3(0, 0, z),
+                    1,
+                    0x06b6d4,
+                    0.2,
+                    0.15
+                );
+                arrowHelpers.push(arrow);
+                waveGroup.add(arrow);
+            }
+
+            // Transverse Projection Screen at Z_END
+            const screenGeo = new THREE.PlaneGeometry(5, 5);
+            const screenMat = new THREE.MeshBasicMaterial({ color: 0xf3f5f8, side: THREE.DoubleSide, transparent: true, opacity: 0.28 });
+            endPlaneMesh = new THREE.Mesh(screenGeo, screenMat);
+            endPlaneMesh.position.z = Z_END;
+            waveScene.add(endPlaneMesh);
+
+            // Border for end plane
+            const edgesGeo = new THREE.EdgesGeometry(screenGeo);
+            const edgesMat = new THREE.LineBasicMaterial({ color: 0x8595a7, opacity: 0.5, transparent: true });
+            const wireframe = new THREE.LineSegments(edgesGeo, edgesMat);
+            endPlaneMesh.add(wireframe);
+
+            // Dynamic Polarization Trace Line on End Screen
+            traceGeometry = new THREE.BufferGeometry();
+            const tracePos = new Float32Array(100 * 3);
+            traceGeometry.setAttribute('position', new THREE.BufferAttribute(tracePos, 3));
+            traceLine = new THREE.LineLoop(traceGeometry, new THREE.LineBasicMaterial({ color: 0xf59e0b, linewidth: 3 }));
+            waveScene.add(traceLine);
+        }
+
+        // --- Bloch Sphere Scene Setup ---
+        function initBlochScene() {
+            const container = document.getElementById('canvas-bloch-container');
+            const width = container.clientWidth;
+            const height = container.clientHeight;
+
+            blochScene = new THREE.Scene();
+            blochScene.background = new THREE.Color(0xffffff);
+
+            blochCamera = new THREE.PerspectiveCamera(45, width / height, 0.1, 100);
+            blochCamera.position.set(5, 4, 6);
+
+            blochRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            blochRenderer.setSize(width, height);
+            blochRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            container.appendChild(blochRenderer.domElement);
+
+            blochControls = new THREE.OrbitControls(blochCamera, blochRenderer.domElement);
+            blochControls.enableDamping = true;
+            blochControls.dampingFactor = 0.05;
+
+            // Lights
+            const ambient = new THREE.AmbientLight(0xffffff, 0.8);
+            blochScene.add(ambient);
+            const pointLight = new THREE.PointLight(0x38bdf8, 1, 50);
+            pointLight.position.set(5, 8, 5);
+            blochScene.add(pointLight);
+
+            // Sphere (Glass/Translucent)
+            const sphereGeo = new THREE.SphereGeometry(blochRadius, 32, 32);
+            const sphereMat = new THREE.MeshPhongMaterial({
+                color: 0xffffff,
+                transparent: true,
+                opacity: 0.025,
+                shininess: 90,
+                wireframe: false
+            });
+            const sphereMesh = new THREE.Mesh(sphereGeo, sphereMat);
+            blochScene.add(sphereMesh);
+
+            // Wireframe Overlay
+            const wireframeGeo = new THREE.SphereGeometry(blochRadius * 1.001, 16, 16);
+            const wireframeMat = new THREE.MeshBasicMaterial({
+                color: 0x7c8b9d,
+                wireframe: true,
+                transparent: true,
+                opacity: 0.25
+            });
+            blochScene.add(new THREE.Mesh(wireframeGeo, wireframeMat));
+
+            // Equator / Meridian Rings
+            createRing(blochRadius, 0x808c9b, 'xy'); // Equator (X-Y)
+            createRing(blochRadius, 0xb3bdca, 'xz'); // Meridian (X-Z)
+            createRing(blochRadius, 0x929eac, 'yz'); // Meridian (Y-Z)
+
+            // Bloch Axes
+            // Physics standard mapping on Bloch sphere:
+            // Z (+Y in Three.js): |H> (+Z top), |V> (-Z bottom)
+            // X (+X in Three.js): |D> (+X right), |A> (-X left)
+            // Y (+Z in Three.js): |L> (+Y front), |R> (-Y back)
+
+            createAxis(new THREE.Vector3(0, blochRadius * 1.3, 0), new THREE.Vector3(0, -blochRadius * 1.3, 0), 0x38bdf8); // Z-axis
+            createAxis(new THREE.Vector3(blochRadius * 1.3, 0, 0), new THREE.Vector3(-blochRadius * 1.3, 0, 0), 0x10b981); // X-axis
+            createAxis(new THREE.Vector3(0, 0, blochRadius * 1.3), new THREE.Vector3(0, 0, -blochRadius * 1.3), 0xf59e0b); // Y-axis
+
+            // Add Text Labels using Canvas Sprites
+            addTextSprite("|H⟩ (+Z)", 0, blochRadius * 1.45, 0, "#1557a0");
+            addTextSprite("|V⟩ (-Z)", 0, -blochRadius * 1.45, 0, "#1557a0");
+            addTextSprite("|D⟩ (+X)", blochRadius * 1.45, 0, 0, "#147a50");
+            addTextSprite("|A⟩ (-X)", -blochRadius * 1.45, 0, 0, "#147a50");
+            addTextSprite("|L⟩ (+Y)", 0, 0, blochRadius * 1.45, "#a25b00");
+            addTextSprite("|R⟩ (-Y)", 0, 0, -blochRadius * 1.45, "#a25b00");
+
+            // State Vector Arrow
+            stateVectorArrow = new THREE.ArrowHelper(
+                new THREE.Vector3(0, 1, 0),
+                new THREE.Vector3(0, 0, 0),
+                blochRadius,
+                0xd02a2a,
+                0.3,
+                0.2
+            );
+            blochScene.add(stateVectorArrow);
+
+            // Tip Sphere Marker
+            const tipGeo = new THREE.SphereGeometry(0.12, 16, 16);
+            const tipMat = new THREE.MeshBasicMaterial({ color: 0xd02a2a });
+            sphereTipMesh = new THREE.Mesh(tipGeo, tipMat);
+            blochScene.add(sphereTipMesh);
+        }
+
+        // Helper to draw clean rings
+        function createRing(radius, color, plane) {
+            const curve = new THREE.EllipseCurve(0, 0, radius, radius, 0, 2 * Math.PI, false, 0);
+            const points = curve.getPoints(64);
+            const geometry = new THREE.BufferGeometry().setFromPoints(points);
+            const material = new THREE.LineBasicMaterial({ color: color, transparent: true, opacity: 0.5 });
+            const ring = new THREE.LineLoop(geometry, material);
+
+            if (plane === 'xy') {
+                ring.rotation.x = Math.PI / 2;
+            } else if (plane === 'yz') {
+                ring.rotation.y = Math.PI / 2;
+            }
+            blochScene.add(ring);
+        }
+
+        // Helper to create axis line
+        function createAxis(p1, p2, color) {
+            const geo = new THREE.BufferGeometry().setFromPoints([p1, p2]);
+            const mat = new THREE.LineBasicMaterial({ color: color, opacity: 0.6, transparent: true });
+            blochScene.add(new THREE.Line(geo, mat));
+        }
+
+        // Canvas Text Sprite Generator
+        function addTextSprite(text, x, y, z, color) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 256;
+            canvas.height = 128;
+            const ctx = canvas.getContext('2d');
+            ctx.font = 'Bold 44px Inter, sans-serif';
+            ctx.fillStyle = color;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(text, 128, 64);
+
+            const texture = new THREE.CanvasTexture(canvas);
+            const spriteMaterial = new THREE.SpriteMaterial({ map: texture, transparent: true });
+            const sprite = new THREE.Sprite(spriteMaterial);
+            sprite.position.set(x, y, z);
+            sprite.scale.set(1.6, 0.8, 1);
+            blochScene.add(sprite);
+        }
+
+        // --- Interactive Event Listeners ---
+        function setupEventListeners() {
+            sliderEx.addEventListener('input', (e) => {
+                params.Ex = parseFloat(e.target.value);
+                valEx.innerText = params.Ex.toFixed(2);
+                updateAll();
+                clearPresetHighlights();
+            });
+
+            sliderEy.addEventListener('input', (e) => {
+                params.Ey = parseFloat(e.target.value);
+                valEy.innerText = params.Ey.toFixed(2);
+                updateAll();
+                clearPresetHighlights();
+            });
+
+            sliderDelta.addEventListener('input', (e) => {
+                params.deltaDeg = parseInt(e.target.value);
+                valDelta.innerHTML = `${params.deltaDeg}&deg;`;
+                updateAll();
+                clearPresetHighlights();
+            });
+
+            sliderSpeed.addEventListener('input', (e) => {
+                params.speed = parseFloat(e.target.value);
+                valSpeed.innerText = `${params.speed.toFixed(1)}x`;
+            });
+
+            sliderFreq.addEventListener('input', (e) => {
+                params.freq = parseFloat(e.target.value);
+                valFreq.innerText = params.freq.toFixed(1);
+            });
+
+            window.addEventListener('resize', onWindowResize);
+        }
+
+        function onWindowResize() {
+            // Resize Wave Viewport
+            const cWave = document.getElementById('canvas-wave-container');
+            if (cWave) {
+                waveCamera.aspect = cWave.clientWidth / cWave.clientHeight;
+                waveCamera.updateProjectionMatrix();
+                waveRenderer.setSize(cWave.clientWidth, cWave.clientHeight);
+            }
+
+            // Resize Bloch Viewport
+            const cBloch = document.getElementById('canvas-bloch-container');
+            if (cBloch) {
+                blochCamera.aspect = cBloch.clientWidth / cBloch.clientHeight;
+                blochCamera.updateProjectionMatrix();
+                blochRenderer.setSize(cBloch.clientWidth, cBloch.clientHeight);
+            }
+        }
+
+        // --- Preset Logic ---
+        function setPreset(type) {
+            clearPresetHighlights();
+            const btn = document.getElementById(`btn-${type}`);
+            if (btn) {
+                btn.classList.remove('border-slate-700', 'text-slate-300');
+                btn.classList.add('border-cyan-500', 'text-cyan-300', 'bg-cyan-500/20', 'glow-cyan');
+            }
+
+            if (type === 'H') {
+                params.Ex = 1.0; params.Ey = 0.0; params.deltaDeg = 0;
+            } else if (type === 'V') {
+                params.Ex = 0.0; params.Ey = 1.0; params.deltaDeg = 0;
+            } else if (type === 'D') {
+                params.Ex = 0.707; params.Ey = 0.707; params.deltaDeg = 0;
+            } else if (type === 'A') {
+                params.Ex = 0.707; params.Ey = 0.707; params.deltaDeg = 180;
+            } else if (type === 'R') {
+                params.Ex = 0.707; params.Ey = 0.707; params.deltaDeg = -90;
+            } else if (type === 'L') {
+                params.Ex = 0.707; params.Ey = 0.707; params.deltaDeg = 90;
+            } else if (type === 'E') {
+                params.Ex = 0.90; params.Ey = 0.55; params.deltaDeg = 55;
+            }
+
+            sliderEx.value = params.Ex;
+            sliderEy.value = params.Ey;
+            sliderDelta.value = params.deltaDeg;
+
+            valEx.innerText = params.Ex.toFixed(2);
+            valEy.innerText = params.Ey.toFixed(2);
+            valDelta.innerHTML = `${params.deltaDeg}&deg;`;
+
+            updateAll();
+        }
+
+        function clearPresetHighlights() {
+            document.querySelectorAll('.preset-btn').forEach(b => {
+                b.classList.remove('border-cyan-500', 'text-cyan-300', 'bg-cyan-500/20', 'glow-cyan');
+                b.classList.add('border-slate-700', 'text-slate-300');
+            });
+        }
+
+        function resetSliders() {
+            setPreset('H');
+            params.speed = 1.0;
+            params.freq = 1.5;
+            sliderSpeed.value = 1.0;
+            sliderFreq.value = 1.5;
+            valSpeed.innerText = "1.0x";
+            valFreq.innerText = "1.5";
+        }
+
+        // --- Calculations & Updates ---
+        function updateAll() {
+            updateMathDisplays();
+            updateEndPlaneTrace();
+            updateBlochVector();
+        }
+
+        function updateMathDisplays() {
+            const Ex = params.Ex;
+            const Ey = params.Ey;
+            const deltaRad = params.deltaDeg * Math.PI / 180;
+
+            // Normalize total intensity S0
+            const S0 = Ex * Ex + Ey * Ey;
+            const norm = S0 > 0 ? Math.sqrt(S0) : 1;
+
+            const Ex_norm = Ex / norm;
+            const Ey_norm = Ey / norm;
+
+            // Normalized Stokes Parameters
+            const s0 = 1.0;
+            const s1 = (Ex * Ex - Ey * Ey) / (S0 || 1); // Z on Bloch
+            const s2 = (2 * Ex * Ey * Math.cos(deltaRad)) / (S0 || 1); // X on Bloch
+            const s3 = (2 * Ex * Ey * Math.sin(deltaRad)) / (S0 || 1); // Y on Bloch
+
+            stokesS0.innerText = S0 > 0 ? "1.00" : "0.00";
+            stokesS1.innerText = (s1 >= 0 ? "+" : "") + s1.toFixed(2);
+            stokesS2.innerText = (s2 >= 0 ? "+" : "") + s2.toFixed(2);
+            stokesS3.innerText = (s3 >= 0 ? "+" : "") + s3.toFixed(2);
+
+            // Dirac Ket Notation
+            let diracStr = "";
+            if (Math.abs(Ex_norm - 1) < 0.01 && Ey_norm < 0.01) {
+                diracStr = "|&Psi;&rangle; = |H&rangle;";
+            } else if (Ex_norm < 0.01 && Math.abs(Ey_norm - 1) < 0.01) {
+                diracStr = "|&Psi;&rangle; = |V&rangle;";
+            } else if (Math.abs(Ex_norm - 0.707) < 0.02 && Math.abs(Ey_norm - 0.707) < 0.02) {
+                if (params.deltaDeg === 0) diracStr = "|&Psi;&rangle; = |D&rangle; = <sup>1</sup>/<sub>&radic;2</sub>(|H&rangle; + |V&rangle;)";
+                else if (Math.abs(params.deltaDeg) === 180) diracStr = "|&Psi;&rangle; = |A&rangle; = <sup>1</sup>/<sub>&radic;2</sub>(|H&rangle; - |V&rangle;)";
+                else if (params.deltaDeg === 90) diracStr = "|&Psi;&rangle; = |L&rangle; = <sup>1</sup>/<sub>&radic;2</sub>(|H&rangle; + i|V&rangle;)";
+                else if (params.deltaDeg === -90) diracStr = "|&Psi;&rangle; = |R&rangle; = <sup>1</sup>/<sub>&radic;2</sub>(|H&rangle; - i|V&rangle;)";
+                else {
+                    diracStr = `|&Psi;&rangle; = ${Ex_norm.toFixed(2)}|H&rangle; + ${Ey_norm.toFixed(2)}e<sup>i${params.deltaDeg}&deg;</sup>|V&rangle;`;
+                }
+            } else {
+                diracStr = `|&Psi;&rangle; = ${Ex_norm.toFixed(2)}|H&rangle; + ${Ey_norm.toFixed(2)}e<sup>i${params.deltaDeg}&deg;</sup>|V&rangle;`;
+            }
+            mathDirac.innerHTML = diracStr;
+
+            // Jones Vector
+            let phaseStr = params.deltaDeg === 0 ? "" : (params.deltaDeg === 90 ? "i" : (params.deltaDeg === -90 ? "-i" : `e<sup>i${params.deltaDeg}&deg;</sup>`));
+            mathJones.innerHTML = `J = [ ${Ex_norm.toFixed(2)}, ${Ey_norm.toFixed(2)}${phaseStr} ]<sup>T</sup>`;
+        }
+
+        function updateEndPlaneTrace() {
+            const deltaRad = params.deltaDeg * Math.PI / 180;
+            const count = 100;
+            const positions = traceGeometry.attributes.position.array;
+
+            for (let i = 0; i < count; i++) {
+                const phase = (i / count) * 2 * Math.PI;
+                const x = params.Ex * Math.cos(phase);
+                const y = params.Ey * Math.cos(phase + deltaRad);
+                
+                positions[i * 3] = x;
+                positions[i * 3 + 1] = y;
+                positions[i * 3 + 2] = Z_END;
+            }
+            traceGeometry.attributes.position.needsUpdate = true;
+        }
+
+        function updateBlochVector() {
+            const Ex = params.Ex;
+            const Ey = params.Ey;
+            const deltaRad = params.deltaDeg * Math.PI / 180;
+            const S0 = Ex * Ex + Ey * Ey;
+
+            if (S0 === 0) {
+                stateVectorArrow.visible = false;
+                sphereTipMesh.visible = false;
+                return;
+            }
+            stateVectorArrow.visible = true;
+            sphereTipMesh.visible = true;
+
+            // Stokes mapped to Bloch 3D axes
+            // S1 -> Z (Three Y)
+            // S2 -> X (Three X)
+            // S3 -> Y (Three Z)
+            const s1 = (Ex * Ex - Ey * Ey) / S0; 
+            const s2 = (2 * Ex * Ey * Math.cos(deltaRad)) / S0; 
+            const s3 = (2 * Ex * Ey * Math.sin(deltaRad)) / S0; 
+
+            const vec = new THREE.Vector3(s2, s1, s3).normalize();
+            stateVectorArrow.setDirection(vec);
+            stateVectorArrow.setLength(blochRadius, 0.4, 0.25);
+
+            // Tip sphere position
+            sphereTipMesh.position.set(vec.x * blochRadius, vec.y * blochRadius, vec.z * blochRadius);
+        }
+
+        // --- Main Animation Loop ---
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // Update time
+            params.time += 0.03 * params.speed;
+
+            // 1. Update Wave Propagation
+            const deltaRad = params.deltaDeg * Math.PI / 180;
+            const k = params.freq;
+
+            const posEx = lineEx.geometry.attributes.position.array;
+            const posEy = lineEy.geometry.attributes.position.array;
+            const posEtotal = lineEtotal.geometry.attributes.position.array;
+
+            const numArrows = arrowHelpers.length;
+
+            for (let i = 0; i < WAVE_POINTS; i++) {
+                const tNorm = i / (WAVE_POINTS - 1);
+                const z = Z_START + tNorm * (Z_END - Z_START);
+                
+                const ex = params.Ex * Math.cos(k * z - params.time);
+                const ey = params.Ey * Math.cos(k * z - params.time + deltaRad);
+
+                // Ex curve (projected on XZ plane)
+                posEx[i * 3] = ex;
+                posEx[i * 3 + 1] = 0;
+                posEx[i * 3 + 2] = z;
+
+                // Ey curve (projected on YZ plane)
+                posEy[i * 3] = 0;
+                posEy[i * 3 + 1] = ey;
+                posEy[i * 3 + 2] = z;
+
+                // E total 3D curve
+                posEtotal[i * 3] = ex;
+                posEtotal[i * 3 + 1] = ey;
+                posEtotal[i * 3 + 2] = z;
+
+                // Update discrete vector arrows along propagation path
+                if (i % Math.floor(WAVE_POINTS / numArrows) === 0) {
+                    const arrowIdx = Math.floor(i / Math.floor(WAVE_POINTS / numArrows));
+                    if (arrowIdx < numArrows) {
+                        const arrow = arrowHelpers[arrowIdx];
+                        const vecMag = Math.sqrt(ex * ex + ey * ey);
+                        if (vecMag > 0.01) {
+                            arrow.visible = true;
+                            arrow.setDirection(new THREE.Vector3(ex, ey, 0).normalize());
+                            arrow.setLength(vecMag, 0.15 * vecMag, 0.1 * vecMag);
+                        } else {
+                            arrow.visible = false;
+                        }
+                    }
+                }
+            }
+
+            lineEx.geometry.attributes.position.needsUpdate = true;
+            lineEy.geometry.attributes.position.needsUpdate = true;
+            lineEtotal.geometry.attributes.position.needsUpdate = true;
+
+            // Controls update
+            waveControls.update();
+            blochControls.update();
+
+            // Render both viewports
+            waveRenderer.render(waveScene, waveCamera);
+            blochRenderer.render(blochScene, blochCamera);
+        }
+    </script>
+</body>
+</html>
